@@ -28,7 +28,7 @@ export class UrlService {
 
     const urlCode = nanoid();
 
-    let url = await this.urlRepo.findOneBy({ longUrl });
+    let url = await this.urlRepo.findOneBy({ longUrl, user });
 
     if (url) {
       return url;
