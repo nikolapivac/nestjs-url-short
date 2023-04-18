@@ -1,3 +1,4 @@
+import { IsEmail } from 'class-validator';
 import { UrlEntity } from 'src/url/url.entity';
 import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
 
@@ -6,12 +7,25 @@ export class UserEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  @Column()
+  firstName: string;
+
+  @Column()
+  lastName: string;
+
+  @Column({ unique: true })
+  @IsEmail()
+  email: string;
+
   @Column({ unique: true })
   username: string;
 
   @Column()
   password: string;
 
-  @OneToMany(() => UrlEntity, (url) => url.user)
+  @Column({ default: false })
+  validEmail: boolean;
+
+  @OneToMany(() => UrlEntity, (url) => url.user, { cascade: true })
   urls: UrlEntity[];
 }

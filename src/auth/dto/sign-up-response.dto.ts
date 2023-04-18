@@ -1,17 +1,29 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { UserEntity } from '../user.entity';
 
 export class SignUpResponseDto {
   @ApiProperty()
-  message: string;
+  firstName: string;
+
+  @ApiProperty()
+  lastName: string;
+
+  @ApiProperty()
+  email: string;
+
+  @ApiProperty()
+  username: string;
 
   @ApiProperty()
   statusCode: number;
 
-  static map(response: { message: string; statusCode: number }) {
+  static map(user: UserEntity): SignUpResponseDto {
     const dto = new SignUpResponseDto();
-    dto.message = response.message;
-    dto.statusCode = response.statusCode;
-
+    dto.firstName = user.firstName;
+    dto.lastName = user.lastName;
+    dto.email = user.email;
+    dto.username = user.username;
+    dto.statusCode = 200;
     return dto;
   }
 }

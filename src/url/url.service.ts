@@ -4,6 +4,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { nanoid } from 'nanoid';
 import { UserEntity } from 'src/auth/user.entity';
@@ -17,6 +18,7 @@ export class UrlService {
   constructor(
     @InjectRepository(UrlEntity)
     private readonly urlRepo: Repository<UrlEntity>,
+    private configService: ConfigService,
   ) {}
 
   async createUrl(
@@ -24,7 +26,9 @@ export class UrlService {
     user: UserEntity,
   ): Promise<UrlEntity> {
     const { longUrl } = createUrlDto;
-    const baseUrl = 'http://localhost:5001/app';
+    const baseUrl = `${this.configService.get(
+      'BASE_URL',
+    )}:${this.configService.get('SERVER_PORT')}/app`;
 
     const urlCode = nanoid();
 

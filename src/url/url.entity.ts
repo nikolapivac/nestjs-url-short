@@ -13,7 +13,7 @@ export class UrlEntity {
   @Column()
   shortUrl: string;
 
-  @ManyToOne(() => UserEntity, (user) => user.urls)
+  @ManyToOne(() => UserEntity, (user) => user.urls, { onDelete: 'CASCADE' })
   @Exclude({ toPlainOnly: true })
   user: UserEntity;
 }
