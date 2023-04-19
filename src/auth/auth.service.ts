@@ -13,6 +13,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
 import * as nodemailer from 'nodemailer';
 import { Repository } from 'typeorm';
+import { v4 as uuidv4 } from 'uuid';
 import {
   SignInCredentialsDto,
   SignUpCredentialsDto,
@@ -47,7 +48,7 @@ export class AuthService {
     } else {
       emailVerification = await this.emailVerificationRepo.save({
         email: email,
-        emailToken: (Math.floor(Math.random() * 9000000) + 1000000).toString(),
+        emailToken: uuidv4(),
         timestamp: new Date(),
       });
       this.logger.verbose(`Token for e-mail ${email} created`);
@@ -151,16 +152,18 @@ export class AuthService {
         password: hashedPassword,
       });
       try {
+        const usernameExists = await this.userRepo.findOneBy({ username });
+        if (usernameExists) {
+          this.logger.verbose(`Username ${user.username} already in use`);
+          throw new ConflictException('Username already in use');
+        }
+
         const savedUser = await this.userRepo.save(user);
         this.logger.verbose(`User ${user.username} signed up successfully`);
         return savedUser;
       } catch (error) {
-        if (error.code === '23505') {
-          throw new ConflictException('Username already in use');
-        } else {
-          this.logger.error(`User ${user.username} failed to sign up`);
-          throw new InternalServerErrorException();
-        }
+        this.logger.error(`User ${user.username} failed to sign up`);
+        throw new InternalServerErrorException();
       }
     } else {
       throw new ConflictException('E-mail already in use');
