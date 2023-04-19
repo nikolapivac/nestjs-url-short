@@ -4,8 +4,10 @@ import {
   Delete,
   Get,
   InternalServerErrorException,
+  NotFoundException,
   Param,
   Post,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
@@ -21,6 +23,9 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Request } from 'express';
+import { Repository } from 'typeorm';
 import { AuthService } from './auth.service';
 import {
   SignInCredentialsDto,
@@ -35,7 +40,11 @@ import { UserEntity } from './user.entity';
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private authService: AuthService) {}
+  constructor(
+    private authService: AuthService,
+    @InjectRepository(UserEntity)
+    private readonly userRepo: Repository<UserEntity>,
+  ) {}
 
   @Post('/signup')
   @ApiOperation({ summary: 'Create a new user' })
@@ -52,10 +61,14 @@ export class AuthController {
   @ApiBadRequestResponse({ description: 'Invalid credentials' })
   async signUp(
     @Body() signUpCredentialsDto: SignUpCredentialsDto,
+    @Req() request: Request,
   ): Promise<SignUpResponseDto> {
-    const newUser = await this.authService.signUp(signUpCredentialsDto);
+    const newUser = await this.authService.signUp(
+      signUpCredentialsDto,
+      request,
+    );
 
-    const sent = await this.authService.sendEmailVerification(newUser);
+    const sent = await this.authService.sendEmailVerification(newUser, request);
 
     if (!sent) {
       throw new InternalServerErrorException('Verification e-mail not sent');
@@ -77,10 +90,10 @@ export class AuthController {
   async signIn(
     @Body() signInCredentialsDto: SignInCredentialsDto,
   ): Promise<SignInResponseDto> {
-    const { accessToken, validEmail } = await this.authService.signIn(
+    const { accessToken, validEmail, email } = await this.authService.signIn(
       signInCredentialsDto,
     );
-    return SignInResponseDto.map(accessToken, validEmail);
+    return SignInResponseDto.map(accessToken, validEmail, email);
   }
 
   @Get('verify/:token')
@@ -100,6 +113,24 @@ export class AuthController {
     }
   }
 
+  @Get('resend/:email')
+  @ApiOkResponse({ description: 'E-mail resent' })
+  @ApiInternalServerErrorResponse({ description: 'Internal Server Error' })
+  @ApiNotFoundResponse({ description: 'User not found' })
+  @ApiOperation({ summary: 'Resends verification e-mail' })
+  async resendEmail(@Param('email') email: string, @Req() request: Request) {
+    const user = await this.userRepo.findOneBy({ email });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    const sent = await this.authService.sendEmailVerification(user, request);
+    if (!sent) {
+      throw new InternalServerErrorException('Error while resending e-mail');
+    } else {
+      return { message: 'E-mail resent', statusCode: 200 };
+    }
+  }
+
   @Delete('delete')
   @ApiBearerAuth()
   @UseGuards(AuthGuard())
@@ -107,9 +138,9 @@ export class AuthController {
   @ApiOkResponse({ description: 'User deleted' })
   @ApiNotFoundResponse({ description: 'User not found' })
   @ApiInternalServerErrorResponse({ description: 'Internal Server Error' })
-  async deleteUser(@GetUser() user: UserEntity) {
+  async deleteUser(@GetUser() user: UserEntity, @Req() request: Request) {
     try {
-      const isDeleted = await this.authService.deleteUser(user);
+      const isDeleted = await this.authService.deleteUser(user, request);
       return isDeleted
         ? { message: 'User deleted', statusCode: 200 }
         : {

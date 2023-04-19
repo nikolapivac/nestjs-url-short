@@ -1,6 +1,9 @@
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -11,6 +14,8 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
+import { Cache } from 'cache-manager';
+import { Request } from 'express';
 import * as nodemailer from 'nodemailer';
 import { Repository } from 'typeorm';
 import {
@@ -29,9 +34,14 @@ export class AuthService {
     private readonly userRepo: Repository<UserEntity>,
     private jwtService: JwtService,
     private configService: ConfigService,
+    @Inject(CACHE_MANAGER)
+    private cacheManager: Cache,
   ) {}
 
-  async sendEmailVerification(user: UserEntity): Promise<boolean> {
+  async sendEmailVerification(
+    user: UserEntity,
+    request: Request,
+  ): Promise<boolean> {
     if (user.emailToken) {
       const transporter = nodemailer.createTransport({
         service: 'gmail',
@@ -55,6 +65,17 @@ export class AuthService {
           }">Click here to verify</a>`,
       };
 
+      const ipAddress = request.ip;
+      const ipData: { count: number; lastEmailSent: number } =
+        await this.cacheManager.get(ipAddress);
+      const { count, lastEmailSent } = ipData;
+      if (count >= 3 && Date.now() - lastEmailSent < 3600000) {
+        this.logger.verbose(
+          `User ${user.email} exceeded verification e-mail limit`,
+        );
+        throw new BadRequestException('Too many verification e-mails sent');
+      }
+
       const sent = await new Promise<boolean>(async function (resolve, reject) {
         return await transporter.sendMail(mailOptions, async (error, info) => {
           if (error) {
@@ -70,6 +91,14 @@ export class AuthService {
         });
       });
       this.logger.verbose(`E-mail verification link for ${user.email} sent`);
+      await this.cacheManager.set(
+        ipAddress,
+        {
+          count: count + 1,
+          lastEmailSent: Date.now(),
+        },
+        0,
+      );
       return sent;
     } else {
       this.logger.verbose(
@@ -100,6 +129,7 @@ export class AuthService {
 
   async signUp(
     signUpCredentialsDto: SignUpCredentialsDto,
+    request: Request,
   ): Promise<UserEntity> {
     const { firstName, lastName, username, password, validEmail } =
       signUpCredentialsDto;
@@ -120,6 +150,7 @@ export class AuthService {
         validEmail,
         password: hashedPassword,
       });
+
       try {
         const usernameExists = await this.userRepo.findOneBy({ username });
         if (usernameExists) {
@@ -129,6 +160,13 @@ export class AuthService {
 
         const savedUser = await this.userRepo.save(user);
         this.logger.verbose(`User ${user.username} signed up successfully`);
+
+        const ipAddress = request.ip;
+        await this.cacheManager.set(ipAddress, {
+          count: 0,
+          lastEmailSent: Date.now(),
+        });
+
         return savedUser;
       } catch (error) {
         this.logger.error(`User ${user.username} failed to sign up`);
@@ -149,18 +187,23 @@ export class AuthService {
       const payload: JwtPayload = { username };
       const accessToken: string = await this.jwtService.sign(payload);
       const validEmail = user.validEmail;
+      const email = user.email;
       this.logger.verbose(`User ${username} successfully signed in`);
-      return { accessToken, validEmail };
+      return { accessToken, validEmail, email };
     } else {
       this.logger.error(`User ${username} failed to sign in`);
       throw new UnauthorizedException('Please check your credentials');
     }
   }
 
-  async deleteUser(user: UserEntity): Promise<boolean> {
+  async deleteUser(user: UserEntity, request: Request): Promise<boolean> {
     try {
       await this.userRepo.delete(user);
       this.logger.verbose(`User ${user.username} deleted from the database`);
+
+      const ipAddress = request.ip;
+      await this.cacheManager.del(ipAddress);
+
       return true;
     } catch (error) {
       throw new InternalServerErrorException('Failed to delete user');

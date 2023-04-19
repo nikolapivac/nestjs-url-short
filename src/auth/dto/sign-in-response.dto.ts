@@ -7,10 +7,18 @@ export class SignInResponseDto {
   @ApiProperty()
   validEmail: boolean;
 
-  static map(token: string, validEmail: boolean): SignInResponseDto {
+  @ApiProperty()
+  email: string;
+
+  static map(
+    token: string,
+    validEmail: boolean,
+    email: string,
+  ): SignInResponseDto {
     const dto = new SignInResponseDto();
     dto.accessToken = token;
     dto.validEmail = validEmail;
+    dto.email = email;
     return dto;
   }
 }
