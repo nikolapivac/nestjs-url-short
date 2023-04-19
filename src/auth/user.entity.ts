@@ -1,6 +1,12 @@
 import { IsEmail } from 'class-validator';
 import { UrlEntity } from 'src/url/url.entity';
-import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
+import {
+  Column,
+  Entity,
+  Generated,
+  OneToMany,
+  PrimaryGeneratedColumn,
+} from 'typeorm';
 
 @Entity()
 export class UserEntity {
@@ -22,6 +28,10 @@ export class UserEntity {
 
   @Column()
   password: string;
+
+  @Column()
+  @Generated('uuid')
+  emailToken: string;
 
   @Column({ default: false })
   validEmail: boolean;

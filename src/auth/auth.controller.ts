@@ -55,8 +55,7 @@ export class AuthController {
   ): Promise<SignUpResponseDto> {
     const newUser = await this.authService.signUp(signUpCredentialsDto);
 
-    await this.authService.createEmailToken(newUser.email);
-    const sent = await this.authService.sendEmailVerification(newUser.email);
+    const sent = await this.authService.sendEmailVerification(newUser);
 
     if (!sent) {
       throw new InternalServerErrorException('Verification e-mail not sent');

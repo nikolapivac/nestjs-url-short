@@ -5,7 +5,6 @@ import { PassportModule } from '@nestjs/passport';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
-import { EmailVerificationEntity } from './email-verification.entity';
 import { JwtStrategy } from './jwt.strategy';
 import { UserEntity } from './user.entity';
 
@@ -25,7 +24,7 @@ import { UserEntity } from './user.entity';
         },
       }),
     }),
-    TypeOrmModule.forFeature([UserEntity, EmailVerificationEntity]),
+    TypeOrmModule.forFeature([UserEntity]),
   ],
   providers: [AuthService, JwtStrategy],
   controllers: [AuthController],

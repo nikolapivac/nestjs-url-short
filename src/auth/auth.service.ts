@@ -13,13 +13,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
 import * as nodemailer from 'nodemailer';
 import { Repository } from 'typeorm';
-import { v4 as uuidv4 } from 'uuid';
 import {
   SignInCredentialsDto,
   SignUpCredentialsDto,
 } from './dto/auth-credentials.dto';
 import { SignInResponseDto } from './dto/sign-in-response.dto';
-import { EmailVerificationEntity } from './email-verification.entity';
 import { JwtPayload } from './jwt-payload.interface';
 import { UserEntity } from './user.entity';
 
@@ -29,39 +27,12 @@ export class AuthService {
   constructor(
     @InjectRepository(UserEntity)
     private readonly userRepo: Repository<UserEntity>,
-    @InjectRepository(EmailVerificationEntity)
-    private readonly emailVerificationRepo: Repository<EmailVerificationEntity>,
-    // this service is exported by JwtModule, used to sign tokens
     private jwtService: JwtService,
     private configService: ConfigService,
   ) {}
 
-  async createEmailToken(email: string): Promise<boolean> {
-    let emailVerification = await this.emailVerificationRepo.findOneBy({
-      email,
-    });
-    if (
-      emailVerification &&
-      new Date().getTime() - emailVerification.timestamp.getTime() / 60000 < 15
-    ) {
-      throw new InternalServerErrorException('Login e-mail sent recently');
-    } else {
-      emailVerification = await this.emailVerificationRepo.save({
-        email: email,
-        emailToken: uuidv4(),
-        timestamp: new Date(),
-      });
-      this.logger.verbose(`Token for e-mail ${email} created`);
-      return true;
-    }
-  }
-
-  async sendEmailVerification(email: string): Promise<boolean> {
-    const emailVerification = await this.emailVerificationRepo.findOneBy({
-      email,
-    });
-
-    if (emailVerification && emailVerification.emailToken) {
+  async sendEmailVerification(user: UserEntity): Promise<boolean> {
+    if (user.emailToken) {
       const transporter = nodemailer.createTransport({
         service: 'gmail',
         auth: {
@@ -72,7 +43,7 @@ export class AuthService {
 
       const mailOptions = {
         from: this.configService.get('GMAIL_EMAIL'),
-        to: email,
+        to: user.email,
         subject: 'Verify your e-mail',
         text: 'Verify your e-mail',
         html:
@@ -80,7 +51,7 @@ export class AuthService {
           `<a href="${this.configService.get(
             'BASE_URL',
           )}:${this.configService.get('CLIENT_PORT')}/verify/${
-            emailVerification.emailToken
+            user.emailToken
           }">Click here to verify</a>`,
       };
 
@@ -89,54 +60,52 @@ export class AuthService {
           if (error) {
             console.log('Message sent: ', error);
             this.logger.verbose(
-              `Failed to send e-mail verification link for ${email}`,
+              `Failed to send e-mail verification link for ${user.email}`,
             );
             return reject(false);
           }
           console.log('Message sent: ', info.messageId);
-          console.log('Message preview: ', nodemailer.getTestMessageUrl(info));
 
           resolve(true);
         });
       });
-      this.logger.verbose(`E-mail verification link for ${email} sent`);
+      this.logger.verbose(`E-mail verification link for ${user.email} sent`);
       return sent;
     } else {
-      this.logger.verbose(`User ${email} not found or missing e-mail token`);
+      this.logger.verbose(
+        `User ${user.email} not found or missing e-mail token`,
+      );
       throw new ForbiddenException();
     }
   }
 
   async verifyEmail(token: string): Promise<boolean> {
-    const emailVerification = await this.emailVerificationRepo.findOneBy({
+    const user = await this.userRepo.findOneBy({
       emailToken: token,
     });
-    if (emailVerification && emailVerification.email) {
-      const userFromDb = await this.userRepo.findOneBy({
-        email: emailVerification.email,
-      });
-      if (userFromDb) {
-        userFromDb.validEmail = true;
-        const savedUser = await this.userRepo.save(userFromDb);
-        await this.emailVerificationRepo.remove(emailVerification);
-        this.logger.verbose(
-          `E-mail verified for user with e-mail token ${token}`,
-        );
-        return !!savedUser;
-      } else {
-        this.logger.verbose(
-          `User with e-mail token ${token} not found in the database`,
-        );
-        throw new NotFoundException('User not found');
-      }
+    if (user) {
+      user.validEmail = true;
+      const savedUser = await this.userRepo.save(user);
+      this.logger.verbose(
+        `E-mail verified for user with e-mail token ${token}`,
+      );
+      return !!savedUser;
+    } else {
+      this.logger.verbose(
+        `User with e-mail token ${token} not found in the database`,
+      );
+      throw new NotFoundException('User not found');
     }
   }
 
   async signUp(
     signUpCredentialsDto: SignUpCredentialsDto,
   ): Promise<UserEntity> {
-    const { firstName, lastName, email, username, password, validEmail } =
+    const { firstName, lastName, username, password, validEmail } =
       signUpCredentialsDto;
+    let { email } = signUpCredentialsDto;
+
+    email = email.toLowerCase();
 
     const userRegistered = await this.userRepo.findOneBy({ email });
     if (!userRegistered) {
